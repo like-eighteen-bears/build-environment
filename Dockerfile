@@ -2,8 +2,9 @@
 
 # Build arguments for versions of tools to download.
 ARG OS=Linux
+ARG OS_LOWER=linux
 ARG ARCH=x86_64
-ARG GCC_VERSION=15
+ARG GCC_VERSION=14
 ARG CLANG_VERSION=17
 ARG DOCKER_COMPOSE_VERSION=2.39.3
 ARG CMAKE_VERSION=4.1.1
@@ -21,7 +22,7 @@ ARG PYENV_VIRTUALENV_VERSION=1.2.4
 
 # Make the docker buildx plugin available from the official docker image.
 FROM docker as docker_buildx
-COPY --from=docker/buidx-bin /buildx /usr.libexec/docker/cli-plugins/docker-buildx
+COPY --from=docker/buildx-bin /buildx /usr/libexec/docker/cli-plugins/docker_buildx
 
 # Image used for downloading dependencies. We will also base final images on this.
 FROM ubuntu:24.04 AS downloader
@@ -36,7 +37,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=downloader-apt-ca
     rm /etc/apt/apt.conf.d/docker-clean
 
     apt update
-    apt intall -y \
+    apt install -y \
         tar \
         curl \
         unzip \
@@ -49,7 +50,7 @@ EOF
 FROM downloader as docker_compose
 ARG OS
 ARG ARCH
-ARG DOCKER_COMPOSE_VERSION=
+ARG DOCKER_COMPOSE_VERSION
 ADD --chmod=755 \
     https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-${OS}-${ARCH} \
     /opt/docker-compose/docker-compose
@@ -58,7 +59,7 @@ ADD --chmod=755 \
 FROM downloader as git_clang_format
 ADD --chmod=755 \
     https://raw.githubusercontent.com/llvm/llvm-project/refs/heads/main/clang/tools/clang-format/git-clang-format \
-    /opt/llvm
+    /opt/llvm/
 
 # cmake
 FROM downloader as cmake
@@ -78,24 +79,25 @@ ARG OS
 ARG ARCH
 ARG NINJA_VERSION
 ADD --chmod=755 \
-    https://gitbub.com/ninja-build/ninja/raw/refs/tags/v${NINJA_VERSION}/misc/bash-completion \
+    https://github.com/ninja-build/ninja/raw/refs/tags/v${NINJA_VERSION}/misc/bash-completion \
     /opt/ninja/share/bash-completion/ninja
 ADD --chmod=755 \
-    https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-${OS}-${ARCH}.zip \
+    https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-${OS}.zip \
     /tmp/
-RUN unzip /tmp/ninja-${OS}-${ARCH}.zip -d /opt/ninja/bin && \
-    rm /tmp/ninja-${OS}-${ARCH}.zip
+RUN unzip /tmp/ninja-${OS}.zip -d /opt/ninja/bin && \
+    rm /tmp/ninja-${OS}.zip
 
 # ccache
 FROM downloader as ccache
 ARG OS
+ARG OS_LOWER
 ARG ARCH
 ARG CCACHE_VERSION
 WORKDIR /opt/ccache
 ADD --chmod=755 \
     https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-${OS}-${ARCH}.tar.xz \
     /tmp/
-RUN tar xf /tmp/ccache-${CCACHE_VERSION}-${OS}-${ARCH}.tar.xz --owner=root -group=root --strip-components=1 ccache-${CCACHE_VERSION}-${OS}-${ARCH}/ccache && \
+RUN tar xf /tmp/ccache-${CCACHE_VERSION}-${OS}-${ARCH}.tar.xz --owner=root --group=root --strip-components=1 ccache-${CCACHE_VERSION}-${OS_LOWER}-${ARCH}/ccache && \
     rm /tmp/ccache-${CCACHE_VERSION}-${OS}-${ARCH}.tar.xz
 
 # pyenv
@@ -112,7 +114,7 @@ RUN tar zxf /tmp/v${PYENV_VERSION}.tar.gz --strip-components=1 && \
     rm /tmp/v${PYENV_VERSION}.tar.gz
 WORKDIR /opt/pyenv/plugins/pyenv-virtualenv
 ADD --chmod=755 \
-    https://github.com/pyenv/pyenv-virtualenv/archive/refs/tags/v${PYENV_VIRTUALENV_VERSION}}.tar.gz \
+    https://github.com/pyenv/pyenv-virtualenv/archive/refs/tags/v${PYENV_VIRTUALENV_VERSION}.tar.gz \
     /tmp/
 RUN tar zxf /tmp/v${PYENV_VIRTUALENV_VERSION}.tar.gz --strip-components=1 && \
     rm /tmp/v${PYENV_VIRTUALENV_VERSION}.tar.gz
@@ -160,6 +162,7 @@ EOF
 
 COPY ssh/env_setup.sh /usr/local/bin/
 COPY ssh/ssh_config_force_command_env.conf /etc/ssh/ssh_config.d/
+COPY config/pip/pip.conf /etc/
 COPY leb/update_user_group_ids.sh /opt/leb/
 
 # Install core packages
@@ -184,15 +187,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=base-apt-cache \
         python3-venv \
         sshpass \
         sudo \
-        zip
+        zip \
+        `# Needed for pyenv install` \
+        libbz2-dev \
+        libffi-dev \
+        liblzma-dev \
+        libncursesw5-dev \
+        libreadline-dev \
+        libsqlite3-dev \
+        libssl-dev \
+        tk-dev \
+        zlib1g-dev
 EOF
 
-# Update pip3
-RUN pip3 install --upgrade \
-    virtualenv \
-    pip
-
-# Create skel env
 COPY pyenv/skel /etc/skel/
 RUN --mount=type=bind,source=pyenv/.profile,target=/tmp/.profile \
     cat /tmp/.profile >> /etc/skel/.profile
@@ -261,6 +268,7 @@ USER root
 # This should only include items needed for desktop builds in CI
 FROM base AS ci_desktop
 ARG CLANG_VERSION
+ARG GCC_VERSION
 
 ADD ./llvm/update-alternatives-clang.sh /usr/local/bin/
 COPY --link --from=docker_compose /opt/docker-compose/docker-compose /usr/local/bin/
@@ -282,7 +290,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=ci-desktop-apt-ca
     llvm-${CLANG_VERSION} \
     gpp \
     lcov \
-    pthon3-dev \
+    python3-dev \
     docker.io
 
     # Make ${CLANG_VERSION} the default. This will create versionless symlinks for a variety of tools.
@@ -291,10 +299,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=ci-desktop-apt-ca
     # Enable the defauly user to run docker without sudo
     usermod --append --groups docker $DEFAULT_USER
 EOF
-
-# Setup python packages
-RUN pip3 install --upgrade \
-    gcov
 
 #==============================================================================
 # Full Development Build Image
@@ -309,8 +313,4 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=development-apt-c
     set -e
 
     apt upgrade
-    apt install -y --no-install-recommends \
-    bash-completion \
-    gdb \
-    lsof
 EOF

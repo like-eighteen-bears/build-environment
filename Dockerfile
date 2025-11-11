@@ -21,7 +21,7 @@ ARG PYENV_VIRTUALENV_VERSION=1.2.4
 #==============================================================================
 
 # Make the docker buildx plugin available from the official docker image.
-FROM docker as docker_buildx
+FROM docker AS docker_buildx
 COPY --from=docker/buildx-bin /buildx /usr/libexec/docker/cli-plugins/docker_buildx
 
 # Image used for downloading dependencies. We will also base final images on this.
@@ -47,7 +47,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=downloader-apt-ca
 EOF
 
 # docker compose
-FROM downloader as docker_compose
+FROM downloader AS docker_compose
 ARG OS
 ARG ARCH
 ARG DOCKER_COMPOSE_VERSION
@@ -56,13 +56,13 @@ ADD --chmod=755 \
     /opt/docker-compose/docker-compose
 
 # git-clang-format
-FROM downloader as git_clang_format
+FROM downloader AS git_clang_format
 ADD --chmod=755 \
     https://raw.githubusercontent.com/llvm/llvm-project/refs/heads/main/clang/tools/clang-format/git-clang-format \
     /opt/llvm/
 
 # cmake
-FROM downloader as cmake
+FROM downloader AS cmake
 ARG OS
 ARG ARCH
 ARG CMAKE_VERSION
@@ -74,7 +74,7 @@ RUN tar zxf /tmp/cmake-${CMAKE_VERSION}-${OS}-${ARCH}.tar.gz --strip-components=
     rm /tmp/cmake-${CMAKE_VERSION}-${OS}-${ARCH}.tar.gz
 
 # ninja
-FROM downloader as ninja
+FROM downloader AS ninja
 ARG OS
 ARG ARCH
 ARG NINJA_VERSION
@@ -88,7 +88,7 @@ RUN unzip /tmp/ninja-${OS}.zip -d /opt/ninja/bin && \
     rm /tmp/ninja-${OS}.zip
 
 # ccache
-FROM downloader as ccache
+FROM downloader AS ccache
 ARG OS
 ARG OS_LOWER
 ARG ARCH
@@ -101,7 +101,7 @@ RUN tar xf /tmp/ccache-${CCACHE_VERSION}-${OS}-${ARCH}.tar.xz --owner=root --gro
     rm /tmp/ccache-${CCACHE_VERSION}-${OS}-${ARCH}.tar.xz
 
 # pyenv
-FROM downloader as pyenv
+FROM downloader AS pyenv
 ARG OS
 ARG ARCH
 ARG PYENV_VERSION
@@ -126,7 +126,7 @@ RUN tar zxf /tmp/v${PYENV_VIRTUALENV_VERSION}.tar.gz --strip-components=1 && \
 # All final images will be based on this image
 # Use the downloader image as the base as it has the common tools we need.
 # Only include things needed for CI in this base image.
-FROM downloader as base
+FROM downloader AS base
 
 # Tools needed for all toolchains
 COPY --link --from=cmake /opt/cmake /opt/cmake

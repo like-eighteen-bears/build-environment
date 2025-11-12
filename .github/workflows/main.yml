@@ -25,7 +25,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: like-eighteen-bears/build-environment:latest
+          tags: ${{ secrets.DOCKER_USERNAME }}/build-environment:latest
           secrets: |
             DEFAULT_LEB_USERNAME=${{ secrets.DEFAULT_LEB_USERNAME }}
             DEFAULT_LEB_PASSWORD=${{ secrets.DEFAULT_LEB_PASSWORD }}

@@ -3,8 +3,6 @@ name: Docker Image build
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
 
 jobs:
 
@@ -23,8 +21,11 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
           
       - name: Build and push
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: like-eighteen-bears/build-environment:latest
+          sercets: |
+            DEFAULT_LEB_USERNAME=${{ secrets.DEFAULT_LEB_USERNAME }}
+            DEFAULT_LEB_PASSWORD=${{ secrets.DEFAULT_LEB_PASSWORD }}

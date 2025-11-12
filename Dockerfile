@@ -204,18 +204,17 @@ COPY pyenv/skel /etc/skel/
 RUN --mount=type=bind,source=pyenv/.profile,target=/tmp/.profile \
     cat /tmp/.profile >> /etc/skel/.profile
 
+ENV DEFAULT_USER=leb
+
 # Create default user
 RUN <<EOF
-    --mount=type=secret,id=DEFAULT_LEB_USERNAME \
-    DEFAULT_USERNAME=$(cat /run/secrets/DEFAULT_LEB_USERNAME \
-    --mount=type=secret,id=DEFAULT_LEB_PASSWORD \
-    DEFAULT_PASSWORD=$(cat /run/secrets/DEFAULT_LEB_PASSWORD)
+    --mount=type=secret,id=DEFAULT_LEB_PASSWORD,env=DEFAULT_PASS
 
-    echo "Creating user $DEFAULT_USERNAME"
-    useradd -u 999 -lmU $DEFAULT_USERNAME -G sudo
-    groupmod -g 999 $DEFAULT_USERNAME
-    echo "$DEFAULT_USERNAME:$DEFAULT_PASSWORD" | chpasswd
-    echo "$DEFAULT_USERNAME ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers
+    echo "Creating user $DEFAULT_USER"
+    useradd -u 999 -lmU $DEFAULT_USER -G sudo
+    groupmod -g 999 $DEFAULT_USER
+    echo "$DEFAULT_USER:$DEFAULT_PASS" | chpasswd
+    echo "$DEFAULT_USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers
 EOF
 
 # Create pyenv environment for default user

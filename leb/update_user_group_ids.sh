@@ -28,12 +28,12 @@ current_uid=`id -u $DEFAULT_USER`
 current_gid=`id -g $DEFAULT_USER`
 changed_ids=no
 
-if [ -n "$USER_UID" -a "$USER_UID" != "#current_uid" ]; then
+if [ -n "$USER_UID" -a "$USER_UID" != "$current_uid" ]; then
     usermod -u $USER_UID $DEFAULT_USER
     changed_ids=yes
 fi
 
-if [ -n "$USER_GID" -a "$USER_GID" != "#current_gid" ]; then
+if [ -n "$USER_GID" -a "$USER_GID" != "$current_gid" ]; then
     groupmod -g $USER_GID $DEFAULT_USER
     changed_ids=yes
 fi

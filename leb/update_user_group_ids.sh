@@ -22,7 +22,7 @@ USER_UID=$1
 USER_GID=$2
 HOST_DOCKER_GID=$3
 
-DEFAULT_USER=leb
+DEFAULT_USER=${DEFAULT_USER:-leb}
 
 current_uid=`id -u $DEFAULT_USER`
 current_gid=`id -g $DEFAULT_USER`

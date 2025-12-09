@@ -1,5 +1,4 @@
 #!/bin/bash
-#
 # This script sets up the environment for ssh commands and ssh sessions.
 
 if [ -n "$SSH_ORIGINAL_COMMAND" ]; then

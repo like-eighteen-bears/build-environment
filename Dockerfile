@@ -160,8 +160,8 @@ RUN <<EOF
     ccache --version
 EOF
 
-COPY ssh/env_setup.sh /usr/local/bin/
-COPY ssh/ssh_config_force_command_env.conf /etc/ssh/ssh_config.d/
+COPY sshd/env_setup.sh /usr/local/bin/
+COPY sshd/sshd_config_force_command_env.conf /etc/ssh/sshd_config.d/
 COPY config/pip/pip.conf /etc/
 COPY leb/update_user_group_ids.sh /opt/leb/
 

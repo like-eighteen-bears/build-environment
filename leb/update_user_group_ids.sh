@@ -44,7 +44,7 @@ fi
 
 # We can't assume docker is installed, some images might not have it
 if [ $(getent group docker) ]; then
-    current_docker_gid=`getent group docker | cur -d: -f3`
+    current_docker_gid=`getent group docker | cut -d: -f3`
     if [ -z "$HOST_DOCKER_GID" ]; then
         docker_sock=/var/run/docker.sock
         if [ -$ ${docker_sock} ]; then

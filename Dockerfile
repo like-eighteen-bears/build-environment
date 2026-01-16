@@ -179,6 +179,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=base-apt-cache \
         git \
         git-lfs \
         gnupg \
+        libwayland-dev \
+        libxkbcommon-dev \
         openssh-client \
         python3 \
         python3-argcomplete \
@@ -187,6 +189,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=base-apt-cache \
         python3-venv \
         sshpass \
         sudo \
+        wayland-protocols \
+        xwayland \
         zip \
         `# Needed for pyenv install` \
         libbz2-dev \

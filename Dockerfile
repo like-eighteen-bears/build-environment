@@ -284,10 +284,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=ci-desktop-apt-ca
     <<EOF
     set -e
 
-    apt update
-
     curl -fsSL https://deb.nodesource.com/setup_22.x | -E bash -
-    
+
+    apt update
     apt install -y --no-install-recommends \
     gcc-${GCC_VERSION} \
     g++-${GCC_VERSION} \

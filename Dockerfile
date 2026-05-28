@@ -284,7 +284,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=ci-desktop-apt-ca
     <<EOF
     set -e
 
-    curl -fsSL https://deb.nodesource.com/setup_22.x | -E bash -
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash
 
     apt update
     apt install -y --no-install-recommends \

@@ -299,11 +299,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=ci-desktop-apt-ca
     gpp \
     lcov \
     python3-dev \
-    docker.io \
-    nodejs \
-    npm
-
-    npm install -g @angular/cli
+    docker.io
 
     # Make ${CLANG_VERSION} the default. This will create versionless symlinks for a variety of tools.
     update-alternatives-clang.sh ${CLANG_VERSION} 100

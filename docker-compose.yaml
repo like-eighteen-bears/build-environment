@@ -4,5 +4,4 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      ssh: ["default"]
       target: development

@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# This script ensures that the files created with the 'leb' user and group IDs 
+# This script ensures that the files created with the 'leb' user and group IDs
 # have correct ownership. If docker is installed, it also ensures the docker
-# group ID matches the value provided, or that it matches the group of a 
+# group ID matches the value provided, or that it matches the group of a
 # mounted docker socket, if present.
 #
 # Note: This script expects to be ran as root.
@@ -24,34 +24,36 @@ HOST_DOCKER_GID=$3
 
 DEFAULT_USER=${DEFAULT_USER:-leb}
 
-current_uid=`id -u $DEFAULT_USER`
-current_gid=`id -g $DEFAULT_USER`
+current_uid=$(id -u "$DEFAULT_USER")
+current_gid=$(id -g "$DEFAULT_USER")
 changed_ids=no
 
-if [ -n "$USER_UID" -a "$USER_UID" != "$current_uid" ]; then
-    usermod -u $USER_UID $DEFAULT_USER
+if [ -n "$USER_UID" ] && [ "$USER_UID" != "$current_uid" ]; then
+    usermod -u "$USER_UID" "$DEFAULT_USER"
     changed_ids=yes
 fi
 
-if [ -n "$USER_GID" -a "$USER_GID" != "$current_gid" ]; then
-    groupmod -g $USER_GID $DEFAULT_USER
+if [ -n "$USER_GID" ] && [ "$USER_GID" != "$current_gid" ]; then
+    groupmod -g "$USER_GID" "$DEFAULT_USER"
     changed_ids=yes
 fi
 
 if [ "$changed_ids" = "yes" ]; then
-    chown -R ${USER_UID}:${USER_GID} /home/$DEFAULT_USER
+    # Look the IDs up again, as either argument may have been empty
+    home_dir=$(getent passwd "$DEFAULT_USER" | cut -d: -f6)
+    chown -R "$(id -u "$DEFAULT_USER"):$(id -g "$DEFAULT_USER")" "$home_dir"
 fi
 
 # We can't assume docker is installed, some images might not have it
-if [ $(getent group docker) ]; then
-    current_docker_gid=`getent group docker | cut -d: -f3`
+if getent group docker > /dev/null; then
+    current_docker_gid=$(getent group docker | cut -d: -f3)
     if [ -z "$HOST_DOCKER_GID" ]; then
         docker_sock=/var/run/docker.sock
-        if [ -S ${docker_sock} ]; then
-            HOST_DOCKER_GID=$(stat -c %g ${docker_sock})
+        if [ -S "$docker_sock" ]; then
+            HOST_DOCKER_GID=$(stat -c %g "$docker_sock")
         fi
     fi
-    if [ -n "$HOST_DOCKER_GID" -a "$HOST_DOCKER_GID" != "$current_docker_gid" ]; then
-        groupmod -g $HOST_DOCKER_GID docker
+    if [ -n "$HOST_DOCKER_GID" ] && [ "$HOST_DOCKER_GID" != "$current_docker_gid" ]; then
+        groupmod -g "$HOST_DOCKER_GID" docker
     fi
 fi

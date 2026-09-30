@@ -1,17 +1,28 @@
 # syntax=docker/dockerfile:1
 
 # Build arguments for versions of tools to download.
-ARG OS=Linux
-ARG OS_LOWER=linux
+# Each download is verified against a SHA-256, so update the checksum along with the version.
+ARG OS=linux
 ARG ARCH=x86_64
 ARG GCC_VERSION=14
 ARG CLANG_VERSION=17
-ARG DOCKER_COMPOSE_VERSION=2.39.3
+ARG NODE_VERSION=22
 ARG CMAKE_VERSION=4.1.1
+ARG CMAKE_SHA256=5a6c61cb62b38e153148a2c8d4af7b3d387f0c8c32b6dbceb5eb4af113efd65a
 ARG NINJA_VERSION=1.12.1
+ARG NINJA_SHA256=6f98805688d19672bd699fbbfa2c2cf0fc054ac3df1f0e6a47664d963d530255
+ARG NINJA_COMPLETION_SHA256=536a81b4d5fac9dd74e4842c59f2b5ab0cce27882e3638fd7219d1ad78fa149d
 ARG CCACHE_VERSION=4.11.3
+ARG CCACHE_SHA256=7766991b91b3a5a177ab33fa043fe09e72c68586d5a86d20a563a05b74f119c0
 ARG PYENV_VERSION=2.6.7
+ARG PYENV_SHA256=15b4a23711fea1ec8a320fb46ce39c176c80571ca33cd448d8863d9723c48d93
 ARG PYENV_VIRTUALENV_VERSION=1.2.4
+ARG PYENV_VIRTUALENV_SHA256=6f49a395a17221f87e1e16f0f92c99c3d21d4fc27072d5c80e65ca11b686eedd
+
+# Signing keys for third-party apt repositories. Pinning them means a replaced key fails the build
+# rather than being trusted silently.
+ARG DOCKER_APT_GPG_SHA256=1500c1f56fa9e26b9b8f42452a553675796ade0807cdce11975eb98170b3a570
+ARG NODESOURCE_APT_GPG_SHA256=b42e0321dabdc24e892115da705cf061167eac12a317f23d329862d0aa0a271d
 
 #==============================================================================
 # This first set of images are for downloading a specific dependency in its own
@@ -19,10 +30,6 @@ ARG PYENV_VIRTUALENV_VERSION=1.2.4
 # invalidating the others. Most of them share a common base image so we can 
 # minimize the number of layers that need to be downloaded.
 #==============================================================================
-
-# Make the docker buildx plugin available from the official docker image.
-FROM docker AS docker_buildx
-COPY --from=docker/buildx-bin /buildx /usr/libexec/docker/cli-plugins/docker-buildx
 
 # Image used for downloading dependencies. We will also base final images on this.
 FROM ubuntu:24.04 AS downloader
@@ -46,28 +53,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=downloader-apt-ca
         jq
 EOF
 
-# docker compose
-FROM downloader AS docker_compose
-ARG OS
-ARG ARCH
-ARG DOCKER_COMPOSE_VERSION
-ADD --chmod=755 \
-    https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-${OS}-${ARCH} \
-    /opt/docker-compose/docker-compose
-
-# git-clang-format
-FROM downloader AS git_clang_format
-ADD --chmod=755 \
-    https://raw.githubusercontent.com/llvm/llvm-project/refs/heads/main/clang/tools/clang-format/git-clang-format \
-    /opt/llvm/
-
 # cmake
 FROM downloader AS cmake
 ARG OS
 ARG ARCH
 ARG CMAKE_VERSION
+ARG CMAKE_SHA256
 WORKDIR /opt/cmake
-ADD --chmod=755 \
+ADD --checksum=sha256:${CMAKE_SHA256} \
     https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-${OS}-${ARCH}.tar.gz \
     /tmp/
 RUN tar zxf /tmp/cmake-${CMAKE_VERSION}-${OS}-${ARCH}.tar.gz --strip-components=1 && \
@@ -78,10 +71,12 @@ FROM downloader AS ninja
 ARG OS
 ARG ARCH
 ARG NINJA_VERSION
-ADD --chmod=755 \
+ARG NINJA_SHA256
+ARG NINJA_COMPLETION_SHA256
+ADD --checksum=sha256:${NINJA_COMPLETION_SHA256} --chmod=755 \
     https://github.com/ninja-build/ninja/raw/refs/tags/v${NINJA_VERSION}/misc/bash-completion \
     /opt/ninja/share/bash-completion/ninja
-ADD --chmod=755 \
+ADD --checksum=sha256:${NINJA_SHA256} \
     https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-${OS}.zip \
     /tmp/
 RUN unzip /tmp/ninja-${OS}.zip -d /opt/ninja/bin && \
@@ -90,30 +85,30 @@ RUN unzip /tmp/ninja-${OS}.zip -d /opt/ninja/bin && \
 # ccache
 FROM downloader AS ccache
 ARG OS
-ARG OS_LOWER
 ARG ARCH
 ARG CCACHE_VERSION
+ARG CCACHE_SHA256
 WORKDIR /opt/ccache
-ADD --chmod=755 \
+ADD --checksum=sha256:${CCACHE_SHA256} \
     https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-${OS}-${ARCH}.tar.xz \
     /tmp/
-RUN tar xf /tmp/ccache-${CCACHE_VERSION}-${OS}-${ARCH}.tar.xz --owner=root --group=root --strip-components=1 ccache-${CCACHE_VERSION}-${OS_LOWER}-${ARCH}/ccache && \
+RUN tar xf /tmp/ccache-${CCACHE_VERSION}-${OS}-${ARCH}.tar.xz --owner=root --group=root --strip-components=1 ccache-${CCACHE_VERSION}-${OS}-${ARCH}/ccache && \
     rm /tmp/ccache-${CCACHE_VERSION}-${OS}-${ARCH}.tar.xz
 
 # pyenv
 FROM downloader AS pyenv
-ARG OS
-ARG ARCH
 ARG PYENV_VERSION
+ARG PYENV_SHA256
 ARG PYENV_VIRTUALENV_VERSION
+ARG PYENV_VIRTUALENV_SHA256
 WORKDIR /opt/pyenv
-ADD --chmod=755 \
+ADD --checksum=sha256:${PYENV_SHA256} \
     https://github.com/pyenv/pyenv/archive/refs/tags/v${PYENV_VERSION}.tar.gz \
     /tmp/
 RUN tar zxf /tmp/v${PYENV_VERSION}.tar.gz --strip-components=1 && \
     rm /tmp/v${PYENV_VERSION}.tar.gz
 WORKDIR /opt/pyenv/plugins/pyenv-virtualenv
-ADD --chmod=755 \
+ADD --checksum=sha256:${PYENV_VIRTUALENV_SHA256} \
     https://github.com/pyenv/pyenv-virtualenv/archive/refs/tags/v${PYENV_VIRTUALENV_VERSION}.tar.gz \
     /tmp/
 RUN tar zxf /tmp/v${PYENV_VIRTUALENV_VERSION}.tar.gz --strip-components=1 && \
@@ -176,18 +171,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=base-apt-cache \
         git \
         git-lfs \
         gnupg \
-        libwayland-dev \
-        libxkbcommon-dev \
         openssh-client \
         python3 \
-        python3-argcomplete \
-        python3-gdbm \
-        python3-pip \
-        python3-venv \
-        sshpass \
         sudo \
-        wayland-protocols \
-        xwayland \
         zip \
         `# Needed for pyenv install` \
         libbz2-dev \
@@ -214,7 +200,9 @@ USER root:pyenv
 RUN <<EOF
     set -e
     $PYENV_ROOT/bin/pyenv install $PY_ENV_VERSION
-    $PYENV_ROOT/bin/pyenv global system $PY_ENV_VERSION
+    # pyenv's python comes first so python, python3 and pip all use it. The system python is
+    # externally managed (PEP 668), so pip can't install into it.
+    $PYENV_ROOT/bin/pyenv global $PY_ENV_VERSION system
     chmod g+rwX -R $PYENV_ROOT
 EOF
 USER root
@@ -235,17 +223,29 @@ RUN mkdir -m 0777 $CCACHE_DIR
 FROM base AS ci_desktop
 ARG CLANG_VERSION
 ARG GCC_VERSION
+ARG NODE_VERSION
+ARG DOCKER_APT_GPG_SHA256
+ARG NODESOURCE_APT_GPG_SHA256
 
-ADD ./llvm/update-alternatives-clang.sh /usr/local/bin/
-COPY --link --from=docker_compose /opt/docker-compose/docker-compose /usr/local/bin/
-COPY --link --from=docker_buildx /usr/libexec/docker/cli-plugins/docker-buildx /usr/libexec/docker/cli-plugins/
+COPY ./llvm/update-alternatives-clang.sh /usr/local/bin/
+
+# Third-party apt repositories, added explicitly rather than by piping a setup script to bash
+ADD --checksum=sha256:${DOCKER_APT_GPG_SHA256} \
+    https://download.docker.com/linux/ubuntu/gpg /etc/apt/keyrings/docker.asc
+ADD --checksum=sha256:${NODESOURCE_APT_GPG_SHA256} \
+    https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key /etc/apt/keyrings/nodesource.asc
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=ci-desktop-apt-cache \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=ci-desktop-apt-lib \
     <<EOF
     set -e
 
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash
+    chmod 0644 /etc/apt/keyrings/docker.asc /etc/apt/keyrings/nodesource.asc
+    . /etc/os-release
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${VERSION_CODENAME} stable" \
+        > /etc/apt/sources.list.d/docker.list
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/nodesource.asc] https://deb.nodesource.com/node_${NODE_VERSION}.x nodistro main" \
+        > /etc/apt/sources.list.d/nodesource.list
 
     apt update
     apt install -y --no-install-recommends \
@@ -256,22 +256,39 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=ci-desktop-apt-ca
     clang-tidy-${CLANG_VERSION} \
     lld-${CLANG_VERSION} \
     llvm-${CLANG_VERSION} \
-    gpp \
     lcov \
-    python3-dev \
-    docker.io \
+    `# Only the client: containers use the host's daemon through a mounted socket` \
+    docker-ce-cli \
+    docker-buildx-plugin \
+    docker-compose-plugin \
     nodejs
 
     # Make ${CLANG_VERSION} the default. This will create versionless symlinks for a variety of tools.
     update-alternatives-clang.sh ${CLANG_VERSION} 100
+
+    # Make ${GCC_VERSION} the default. These go in /usr/local/bin, which is ahead of /usr/bin in PATH,
+    # because /usr/bin/gcc etc. belong to the distro's default gcc package and apt may restore them.
+    # gcov must match the compiler version or coverage data can't be read.
+    for tool in gcc g++ cpp gcov gcov-dump gcov-tool gcc-ar gcc-nm gcc-ranlib; do
+        ln -s /usr/bin/${tool}-${GCC_VERSION} /usr/local/bin/${tool}
+    done
+    ln -s gcc /usr/local/bin/cc
+    ln -s g++ /usr/local/bin/c++
+
+    # Keep the standalone command working for scripts that use it
+    ln -s /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+
+    # docker-ce-cli doesn't create the group, but the development user and
+    # update_user_group_ids.sh expect it for access to a mounted docker socket.
+    # The GID is fixed because letting groupadd pick one would take 999, which the development user
+    # needs. update_user_group_ids.sh changes it at runtime to match the host's socket.
+    groupadd --system --gid 998 docker
 EOF
 
 #==============================================================================
 # Full Development Build Image
 #==============================================================================
 FROM ci_desktop AS development
-
-COPY --link --from=git_clang_format /opt/llvm/git-clang-format /usr/local/bin/
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=development-apt-cache \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=development-apt-lib \
@@ -280,11 +297,22 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=development-apt-c
 
     apt update
     apt upgrade -y
+    apt install -y --no-install-recommends \
+        libwayland-dev \
+        libxkbcommon-dev \
+        openssh-server \
+        sshpass \
+        wayland-protocols \
+        xwayland
+
+    # Installing openssh-server generates host keys. Remove them so every container doesn't share
+    # the published keys; start_sshd.sh generates new ones when sshd is started.
+    rm /etc/ssh/ssh_host_*
 EOF
 
 COPY sshd/env_setup.sh /usr/local/bin/
 COPY sshd/sshd_config_force_command_env.conf /etc/ssh/sshd_config.d/
-COPY leb/update_user_group_ids.sh /opt/leb/
+COPY leb/update_user_group_ids.sh leb/start_sshd.sh /opt/leb/
 
 # Must be in /etc/skel before the user is created so useradd copies them into the home directory
 COPY pyenv/skel /etc/skel/
@@ -297,8 +325,12 @@ ENV DEFAULT_USER=leb
 RUN <<EOF
     set -e
 
+    # The base image's 'ubuntu' user has UID/GID 1000, the most common host IDs, which would
+    # stop update_user_group_ids.sh giving them to the default user
+    userdel -r ubuntu
+
     echo "Creating user $DEFAULT_USER"
-    useradd -u 999 -lmU $DEFAULT_USER -G sudo,pyenv,docker
+    useradd -u 999 -lmU $DEFAULT_USER -G sudo,pyenv,docker -s /bin/bash
     groupmod -g 999 $DEFAULT_USER
 
     # No password: a hash baked into a public image can be cracked offline, and sudo doesn't need one
@@ -311,6 +343,11 @@ EOF
 
 # ~/.ccache is expected to be a persistent volume mount in the development environment
 ENV CCACHE_DIR=/home/${DEFAULT_USER}/.ccache
+
+# SSH sessions don't get the image's ENV settings, so save them for env_setup.sh to load.
+# This must come after the last ENV that SSH sessions need.
+RUN export -p | grep -E '^export (PATH|LANG|PYENV_ROOT|PYTHONUNBUFFERED|CCACHE_DIR|DEFAULT_USER)=' \
+    > /opt/leb/container-env.sh
 
 USER $DEFAULT_USER
 

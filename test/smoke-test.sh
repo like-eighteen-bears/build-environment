@@ -44,14 +44,25 @@ check_toolchain() {
         ctest --version
         ninja --version
         ccache --version
-        clang --version
-        gcc-14 --version
+        clang --version | grep -q "clang version 17\."
+        git-clang-format -h > /dev/null
+        ld.lld --version | grep -q "LLD 17\."
+        for tool in gcc g++ cc c++ gcov; do
+            "$tool" --version | head -1 | grep -q " 14\."
+        done
         docker --version
         docker buildx version
+        docker compose version
         docker-compose version
-        node --version
+        getent group docker
+        node --version | grep -q "^v22\."
         pyenv --version
-        python --version | grep -q "3.11.9"
+        for command in python python3; do
+            "$command" --version | grep -q "3.11.9"
+        done
+        for command in pip pip3; do
+            "$command" --version | grep -q "^pip .* from /opt/pyenv/"
+        done
         [ "$LANG" = "C.UTF-8" ]
     '
 
@@ -75,6 +86,12 @@ case "$TARGET" in
             ! getent passwd leb
             [ ! -e /opt/leb ]
         '
+
+        run_check "CI image has no development-only packages" -- '
+            for package in openssh-server sshpass xwayland libwayland-dev python3-pip python3-dev; do
+                ! dpkg -s "$package" > /dev/null 2>&1
+            done
+        '
         ;;
     development)
         check_toolchain leb
@@ -93,11 +110,35 @@ case "$TARGET" in
             bash -lic "[ \"\$USER\" = leb ] && [ \"\$(type -t pyenv)\" = function ] && pyenv virtualenvs" 2>&1
         '
 
+        run_check "Development packages are installed" -- '
+            dpkg -s openssh-server sshpass xwayland libwayland-dev libxkbcommon-dev wayland-protocols > /dev/null
+            getent passwd leb | grep -q ":/bin/bash$"
+            ! getent passwd ubuntu
+        '
+
+        run_check "SSH has per-container host keys and the container environment" -- '
+            ! ls /etc/ssh/ssh_host_* > /dev/null 2>&1
+            /opt/leb/start_sshd.sh
+            ls /etc/ssh/ssh_host_ed25519_key > /dev/null
+            su leb -c "
+                ssh-keygen -q -t ed25519 -N \"\" -f ~/.ssh/id_ed25519
+                cp ~/.ssh/id_ed25519.pub ~/.ssh/authorized_keys
+            "
+            ssh_leb() {
+                su leb -c "ssh -o BatchMode=yes -o StrictHostKeyChecking=no leb@localhost $*"
+            }
+            # A command, and an interactive session reading from stdin
+            ssh_leb "\"python --version; echo \\\$CCACHE_DIR \\\$LANG\"" | tr "\n" " " \
+                | grep -q "^Python 3.11.9 /home/leb/.ccache C.UTF-8 $"
+            echo "cmake --version; type -t pyenv" | ssh_leb 2> /dev/null | grep -q "^function$"
+        '
+
         run_check "User and docker group IDs can be remapped" \
             -v /var/run/docker.sock:/var/run/docker.sock -- '
-            /opt/leb/update_user_group_ids.sh 1500 1500
-            [ "$(id -u leb)" = 1500 ]
-            [ "$(stat -c %u:%g /home/leb)" = 1500:1500 ]
+            # 1000 is the most common host user and group ID
+            /opt/leb/update_user_group_ids.sh 1000 1000
+            [ "$(id -u leb):$(id -g leb)" = 1000:1000 ]
+            [ "$(stat -c %u:%g /home/leb)" = 1000:1000 ]
             su leb -c "docker ps -q > /dev/null"
         '
         ;;

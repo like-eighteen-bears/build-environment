@@ -127,7 +127,9 @@ FROM downloader AS base
 COPY --link --from=cmake /opt/cmake /opt/cmake
 COPY --link --from=ninja /opt/ninja /opt/ninja
 # Single files can be dropped in place
-COPY --link --from=ccache /opt/ccache/ccache /usr/local/bin
+# The trailing slash matters: --link copies onto an empty layer, so without it the
+# file itself would be created as /usr/local/bin
+COPY --link --from=ccache /opt/ccache/ccache /usr/local/bin/
 
 # Setup convenience symlinks and bash completions
 RUN <<EOF

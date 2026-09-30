@@ -159,9 +159,14 @@ The dev container expects a Linux host.
 
 ### Building and testing locally
 
+Build with a `docker-container` builder, the same kind the workflow uses. Docker's default builder handles some instructions differently, e.g. `COPY --link`, so a build that passes on it can still fail in CI.
+
 ```sh
-docker buildx build --target ci_desktop  -t build-environment-ci-desktop:test --load .
-docker buildx build --target development -t build-environment:test --load .
+# Once
+docker buildx create --name build-environment --driver docker-container
+
+docker buildx build --builder build-environment --target ci_desktop  -t build-environment-ci-desktop:test --load .
+docker buildx build --builder build-environment --target development -t build-environment:test --load .
 
 ./test/smoke-test.sh build-environment-ci-desktop:test ci_desktop
 ./test/smoke-test.sh build-environment:test development

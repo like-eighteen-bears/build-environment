@@ -28,9 +28,11 @@ Multi-stage Dockerfile producing images for CI builds and desktop development. S
 - Fixed IDs: `leb` 999, `docker` group 998, `pyenv` group 995. System groups created without an explicit GID take 999, which collides with `leb`.
 
 # Verifying changes
+Build with a `docker-container` builder like CI does, not Docker's default builder: they differ (e.g. `COPY --link`), so a default-builder pass doesn't prove CI will pass.
 ```sh
-docker buildx build --target ci_desktop  -t build-environment-ci-desktop:test --load .
-docker buildx build --target development -t build-environment:test --load .
+docker buildx create --name build-environment --driver docker-container  # once
+docker buildx build --builder build-environment --target ci_desktop  -t build-environment-ci-desktop:test --load .
+docker buildx build --builder build-environment --target development -t build-environment:test --load .
 ./test/smoke-test.sh build-environment-ci-desktop:test ci_desktop
 ./test/smoke-test.sh build-environment:test development
 docker buildx build --check .

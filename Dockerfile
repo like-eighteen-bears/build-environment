@@ -22,7 +22,7 @@ ARG PYENV_VIRTUALENV_VERSION=1.2.4
 
 # Make the docker buildx plugin available from the official docker image.
 FROM docker AS docker_buildx
-COPY --from=docker/buildx-bin /buildx /usr/libexec/docker/cli-plugins/docker_buildx
+COPY --from=docker/buildx-bin /buildx /usr/libexec/docker/cli-plugins/docker-buildx
 
 # Image used for downloading dependencies. We will also base final images on this.
 FROM ubuntu:24.04 AS downloader
@@ -68,7 +68,7 @@ ARG ARCH
 ARG CMAKE_VERSION
 WORKDIR /opt/cmake
 ADD --chmod=755 \
-    https://github.com/Kitware/CMake/releases/download/v4.1.1/cmake-${CMAKE_VERSION}-${OS}-${ARCH}.tar.gz \
+    https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-${OS}-${ARCH}.tar.gz \
     /tmp/
 RUN tar zxf /tmp/cmake-${CMAKE_VERSION}-${OS}-${ARCH}.tar.gz --strip-components=1 && \
     rm /tmp/cmake-${CMAKE_VERSION}-${OS}-${ARCH}.tar.gz
@@ -160,10 +160,7 @@ RUN <<EOF
     ccache --version
 EOF
 
-COPY sshd/env_setup.sh /usr/local/bin/
-COPY sshd/sshd_config_force_command_env.conf /etc/ssh/sshd_config.d/
 COPY config/pip/pip.conf /etc/
-COPY leb/update_user_group_ids.sh /opt/leb/
 
 # Install core packages
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=base-apt-cache \
@@ -204,27 +201,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=base-apt-cache \
         zlib1g-dev
 EOF
 
-COPY pyenv/skel /etc/skel/
-RUN --mount=type=bind,source=pyenv/.profile,target=/tmp/.profile \
-    cat /tmp/.profile >> /etc/skel/.profile
-
-ENV DEFAULT_USER=leb
-
-# Create default user
-RUN <<EOF
-    --mount=type=secret,id=DEFAULT_LEB_PASSWORD,env=DEFAULT_PASS
-
-    echo "Creating user $DEFAULT_USER"
-    useradd -u 999 -lmU $DEFAULT_USER -G sudo
-    groupmod -g 999 $DEFAULT_USER
-    echo "$DEFAULT_USER:$DEFAULT_PASS" | chpasswd
-    echo "$DEFAULT_USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers
-EOF
-
-# Create pyenv environment for default user
+# Install pyenv's python system-wide. The pyenv group owns it so that users added
+# to the group later can install packages and versions without a second copy of
+# /opt/pyenv being made in another layer.
 RUN groupadd -g 995 pyenv
-RUN usermod -aG pyenv $DEFAULT_USER
-COPY --link --from=pyenv /opt/pyenv /opt/pyenv
+COPY --link --chown=0:995 --from=pyenv /opt/pyenv /opt/pyenv
 
 ARG PY_ENV_VERSION=3.11.9
 ENV PYENV_ROOT=/opt/pyenv
@@ -236,38 +217,18 @@ RUN <<EOF
     $PYENV_ROOT/bin/pyenv global system $PY_ENV_VERSION
     chmod g+rwX -R $PYENV_ROOT
 EOF
+USER root
 
-# Change to default user
-USER $DEFAULT_USER
-
-RUN <<EOF
-    # Create these here so that they are owned by the leb user rather than root when volume mounted
-    mkdir ~/.config
-    mkdir ~/.cache
-    mkdir ~/.ccache
-    mkdir ~/.persistent
-    mkdir ~/.vscode
-    mkdir ~/.vscode-server
-
-    touch ~/.persistent/.persistent_bashrc
-
-    # User wont be set if using 'docker run', so ensure it always will be set 
-    echo 'export USER=${whoami}' >> ~/.bashrc
-
-    # We expect ~/.ccache to be a persistent mount, so make sure it is what ccache uses
-    echo 'export CCACHE_DIR="$HOME/.ccache' >> ~/.bashrc
-
-    echo 'export LANG=C.UTF-8' >> ~/.bashrc
-
-    # Add anything developers might have added
-    echo 'source ~/.persistent/.persistent_bashrc' >> ~/.bashrc
-EOF
-
+# Configuration set with ENV rather than in shell rc files, because CI runs
+# non-interactive shells that never read them.
+ENV PATH=$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH
+ENV LANG=C.UTF-8
 # Only buffers one python log message before printing. Helps with logs
 ENV PYTHONUNBUFFERED=1
-
-# Go back to root so the entrypoint script can setup the user permissions
-USER root
+# CI can mount a persistent cache volume here. It is world-writable because CI
+# may run the container as any UID.
+ENV CCACHE_DIR=/ccache
+RUN mkdir -m 0777 $CCACHE_DIR
 
 # CI Builder image for desktop (x86_64) targets.
 # This should only include items needed for desktop builds in CI
@@ -277,7 +238,7 @@ ARG GCC_VERSION
 
 ADD ./llvm/update-alternatives-clang.sh /usr/local/bin/
 COPY --link --from=docker_compose /opt/docker-compose/docker-compose /usr/local/bin/
-COPY --link --from=docker_buildx /usr/libexec/docker/cli-plugins/docker_buildx /usr/libexec/docker/cli-plugins/
+COPY --link --from=docker_buildx /usr/libexec/docker/cli-plugins/docker-buildx /usr/libexec/docker/cli-plugins/
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=ci-desktop-apt-cache \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=ci-desktop-apt-lib \
@@ -303,9 +264,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=ci-desktop-apt-ca
 
     # Make ${CLANG_VERSION} the default. This will create versionless symlinks for a variety of tools.
     update-alternatives-clang.sh ${CLANG_VERSION} 100
-   
-    # Enable the defauly user to run docker without sudo
-    usermod --append --groups docker $DEFAULT_USER
 EOF
 
 #==============================================================================
@@ -320,5 +278,61 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=development-apt-c
     <<EOF
     set -e
 
-    apt upgrade
+    apt update
+    apt upgrade -y
 EOF
+
+COPY sshd/env_setup.sh /usr/local/bin/
+COPY sshd/sshd_config_force_command_env.conf /etc/ssh/sshd_config.d/
+COPY leb/update_user_group_ids.sh /opt/leb/
+
+# Must be in /etc/skel before the user is created so useradd copies them into the home directory
+COPY pyenv/skel /etc/skel/
+RUN --mount=type=bind,source=pyenv/.profile,target=/tmp/.profile \
+    cat /tmp/.profile >> /etc/skel/.profile
+
+ENV DEFAULT_USER=leb
+
+# Create default user
+RUN <<EOF
+    set -e
+
+    echo "Creating user $DEFAULT_USER"
+    useradd -u 999 -lmU $DEFAULT_USER -G sudo,pyenv,docker
+    groupmod -g 999 $DEFAULT_USER
+
+    # No password: a hash baked into a public image can be cracked offline, and sudo doesn't need one
+    passwd -l $DEFAULT_USER
+
+    # Use a drop-in so the distro's /etc/sudoers (root entry, secure_path, includedir) is preserved
+    echo "$DEFAULT_USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$DEFAULT_USER
+    chmod 0440 /etc/sudoers.d/$DEFAULT_USER
+EOF
+
+# ~/.ccache is expected to be a persistent volume mount in the development environment
+ENV CCACHE_DIR=/home/${DEFAULT_USER}/.ccache
+
+USER $DEFAULT_USER
+
+RUN <<EOF
+    set -e
+
+    # Create these here so that they are owned by the leb user rather than root when volume mounted
+    mkdir ~/.config
+    mkdir ~/.cache
+    mkdir ~/.ccache
+    mkdir ~/.persistent
+    mkdir ~/.vscode
+    mkdir ~/.vscode-server
+
+    touch ~/.persistent/.persistent_bashrc
+
+    # User wont be set if using 'docker run', so ensure it always will be set 
+    echo 'export USER=$(whoami)' >> ~/.bashrc
+
+    # Add anything developers might have added
+    echo 'source ~/.persistent/.persistent_bashrc' >> ~/.bashrc
+EOF
+
+# Go back to root so derived images (e.g. DDE) can remap the user's IDs with /opt/leb/update_user_group_ids.sh
+USER root

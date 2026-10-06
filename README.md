@@ -113,6 +113,8 @@ USER $DEFAULT_USER
 
 - `update_user_group_ids.sh userId groupId [dockerGroupId]` changes `leb`'s UID and GID and re-owns `/home/leb`.
 - If you leave out `dockerGroupId`, the script uses the group of `/var/run/docker.sock` when that is mounted, which only happens at runtime.
+- The `docker` group takes the Docker group ID. If another group in the image already has it, `leb` joins that group instead. That includes `leb`'s own group, e.g. when the host user's primary group is `docker`, as on GitHub's runners.
+- The script stops with an error if the user or group ID belongs to another user or group in the image, such as `pyenv` (995).
 - On the host, get the values with `id -u`, `id -g` and `getent group docker | cut -d: -f3`.
 - The Ubuntu base image's `ubuntu` user, which has UID/GID 1000, is removed from the development image so that `leb` can take those IDs. Don't try to `userdel ubuntu` in a derived image: it fails because the user no longer exists.
 

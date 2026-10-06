@@ -141,6 +141,31 @@ case "$TARGET" in
             [ "$(stat -c %u:%g /home/leb)" = 1000:1000 ]
             su leb -c "docker ps -q > /dev/null"
         '
+
+        run_check "The host user's primary group can be the docker group" -- '
+            # As on GitHub runners. The docker group is left alone, and leb has access through its own group
+            /opt/leb/update_user_group_ids.sh 1001 118 118
+            [ "$(id -g leb)" = 118 ]
+            [ "$(getent group docker | cut -d: -f3)" = 998 ]
+        '
+
+        run_check "The docker group makes way for the user's group ID" -- '
+            /opt/leb/update_user_group_ids.sh 1000 998 965
+            [ "$(id -g leb)" = 998 ]
+            [ "$(getent group docker | cut -d: -f3)" = 965 ]
+            id -nG leb | tr " " "\n" | grep -qx docker
+        '
+
+        run_check "Docker access comes from another group that already has the docker ID" -- '
+            /opt/leb/update_user_group_ids.sh 1000 1000 100
+            [ "$(getent group 100 | cut -d: -f1)" = users ]
+            id -nG leb | tr " " "\n" | grep -qx users
+        '
+
+        run_check "A user group ID that another group has is refused" -- '
+            ! /opt/leb/update_user_group_ids.sh 1000 995 965 2> /tmp/error
+            grep -q "pyenv" /tmp/error
+        '
         ;;
     *)
         echo "Unknown target: $TARGET"

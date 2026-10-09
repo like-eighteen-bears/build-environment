@@ -66,6 +66,93 @@ check_toolchain() {
         [ "$LANG" = "C.UTF-8" ]
     '
 
+    # Creates a real instance with the validation layer, so this proves the headers, loader, layer and a driver
+    # (lavapipe, since there is no GPU here) all work together, not just that the packages are installed
+    run_check "Vulkan builds and runs with validation as $1" -u "$1" -- '
+        cd "$(mktemp -d)"
+        cat > vulkan.c << "EOF"
+#include <stdio.h>
+#include <vulkan/vulkan.h>
+
+int main(void) {
+    const char* layers[] = {"VK_LAYER_KHRONOS_validation"};
+    VkApplicationInfo app = {.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_3};
+    VkInstanceCreateInfo create = {
+        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+        .pApplicationInfo = &app,
+        .enabledLayerCount = 1,
+        .ppEnabledLayerNames = layers,
+    };
+    VkInstance instance;
+    if (vkCreateInstance(&create, NULL, &instance) != VK_SUCCESS) {
+        return 1;
+    }
+    uint32_t device_count = 0;
+    vkEnumeratePhysicalDevices(instance, &device_count, NULL);
+    vkDestroyInstance(instance, NULL);
+    printf("%u\n", device_count);
+    return device_count > 0 ? 0 : 2;
+}
+EOF
+        gcc vulkan.c -o vulkan -lvulkan
+        ./vulkan
+
+        printf "#version 450\nlayout(location = 0) out vec4 color;\nvoid main() { color = vec4(1.0); }\n" > shader.frag
+        glslangValidator -V shader.frag -o glslang.spv
+        glslc shader.frag -o glslc.spv
+        for spirv in glslang.spv glslc.spv; do
+            [ "$(od -An -tx4 -N4 "$spirv" | tr -d " ")" = 07230203 ]
+        done
+    '
+
+    # Uses the shared libshaderc. Ubuntu's libshaderc_combined.a is not self-contained (it lacks glslang and
+    # SPIRV-Tools, and its .pc file does not list them), so it, and FindVulkan's shaderc_combined component, fail to link
+    run_check "shaderc library compiles shaders at run time as $1" -u "$1" -- '
+        cd "$(mktemp -d)"
+        cat > shaderc.c << "EOF"
+#include <shaderc/shaderc.h>
+#include <string.h>
+
+int main(void) {
+    const char* source = "#version 450\nvoid main() {}\n";
+    shaderc_compiler_t compiler = shaderc_compiler_initialize();
+    shaderc_compilation_result_t result = shaderc_compile_into_spv(
+        compiler, source, strlen(source), shaderc_vertex_shader, "test.vert", "main", NULL);
+    int succeeded = shaderc_result_get_compilation_status(result) == shaderc_compilation_status_success
+        && shaderc_result_get_length(result) > 0;
+    shaderc_result_release(result);
+    shaderc_compiler_release(compiler);
+    return succeeded ? 0 : 1;
+}
+EOF
+        gcc shaderc.c -o shaderc $(pkg-config --cflags --libs shaderc)
+        ./shaderc
+    '
+
+    # No compositor here, so this proves building and linking, plus that a missing display is handled
+    run_check "Wayland client code builds as $1" -u "$1" -- '
+        cd "$(mktemp -d)"
+        cat > wayland.c << "EOF"
+#include <wayland-client.h>
+
+#include "xdg-shell-client-protocol.h"
+
+int main(void) {
+    struct wl_display* display = wl_display_connect(NULL);
+    if (display != NULL) {
+        wl_display_disconnect(display);
+    }
+    return xdg_wm_base_interface.name[0] == 0;
+}
+EOF
+        # Windows need xdg-shell, whose client code is generated from wayland-protocols XML
+        protocols=$(pkg-config --variable=pkgdatadir wayland-protocols)
+        wayland-scanner client-header "$protocols/stable/xdg-shell/xdg-shell.xml" xdg-shell-client-protocol.h
+        wayland-scanner private-code "$protocols/stable/xdg-shell/xdg-shell.xml" xdg-shell-protocol.c
+        gcc -I. wayland.c xdg-shell-protocol.c -o wayland $(pkg-config --cflags --libs wayland-client)
+        ./wayland
+    '
+
     run_check "ccache caches compiles as $1" -u "$1" -- '
         cd "$(mktemp -d)"
         echo "int main() { return 0; }" > main.c
@@ -88,7 +175,7 @@ case "$TARGET" in
         '
 
         run_check "CI image has no development-only packages" -- '
-            for package in openssh-server sshpass xwayland libwayland-dev python3-pip python3-dev; do
+            for package in openssh-server sshpass xwayland python3-pip python3-dev; do
                 ! dpkg -s "$package" > /dev/null 2>&1
             done
         '

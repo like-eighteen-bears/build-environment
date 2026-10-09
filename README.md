@@ -39,8 +39,11 @@ Both images are based on Ubuntu 24.04 and include:
 | Node.js | 22 | |
 | Docker CLI | Latest from Docker's apt repo | Includes `docker buildx` and `docker compose`. There's no daemon: mount the host's socket |
 | git, git-lfs | Ubuntu 24.04's versions | |
+| Vulkan | Ubuntu 24.04's versions | Headers and loader (`libvulkan-dev`), the Khronos validation layers and Mesa's drivers. Mesa includes lavapipe, a CPU Vulkan driver, so Vulkan code runs in CI without a GPU |
+| Shader compilers | Ubuntu 24.04's versions | `glslangValidator` (`glslang-tools`), shaderc's `glslc`, and the shaderc library (`libshaderc-dev`) for compiling shaders at run time. Link the shared library (`pkg-config shaderc`, `-lshaderc`): Ubuntu's `libshaderc_combined.a` lacks its glslang and SPIRV-Tools dependencies, so it, and CMake FindVulkan's `shaderc_combined` component, fail to link |
+| Wayland | Ubuntu 24.04's versions | Client development library and `wayland-scanner` (`libwayland-dev`), and the protocol XML such as xdg-shell (`wayland-protocols`), so Linux window system code builds in CI |
 
-The development image also has the Wayland and xkbcommon development libraries, XWayland, `sshpass` and an SSH server. See [SSH access](#ssh-access).
+The development image also has the xkbcommon development library, XWayland, `sshpass` and an SSH server. See [SSH access](#ssh-access).
 
 ### Python
 

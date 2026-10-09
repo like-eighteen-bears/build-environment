@@ -14,6 +14,7 @@ You are a Principal Software Engineer. You write clean, maintainable, and secure
   - Add comments only for *why* a complex decision was made, not only *what* the code does.
 - **Testing:** Write unit tests for all new logic. Run existing tests before finishing.
   - For this repo, tests are checks in `test/smoke-test.sh`. Add one for every tool or configuration change.
+- **AI Learning** Keep this file up to date with information about the project, conventions, and method to verify changes.
 
 # Project
 Multi-stage Dockerfile producing images for CI builds and desktop development. See README.md for the image, tag and user details.
@@ -24,6 +25,7 @@ Multi-stage Dockerfile producing images for CI builds and desktop development. S
 # Conventions
 - Settings a build needs go in `ENV`, never only in `.bashrc`/`.profile`: CI runs non-interactive shells.
 - Nothing development-only goes in `base` or `ci_desktop`.
+- Vulkan (`libvulkan-dev`, `mesa-vulkan-drivers`, `vulkan-validationlayers`), the shader compilers (`glslang-tools`, `glslc`, `libshaderc-dev`) and `libwayland-dev` + `wayland-protocols` are in `ci_desktop`, not development-only: CI builds Vulkan and Wayland code, and Mesa's lavapipe CPU driver lets it run Vulkan tests with validation on GPU-less runners. Mesa makes the images noticeably larger; that is accepted. Ubuntu's `libshaderc_combined.a` is not self-contained; consumers must link the shared `libshaderc`.
 - Every downloaded file has an `ADD --checksum` with its SHA-256 ARG next to the version ARG. Third-party apt repos use pinned signing keys, not `curl | bash`.
 - Fixed IDs: `leb` 999, `docker` group 998, `pyenv` group 995. System groups created without an explicit GID take 999, which collides with `leb`.
 
@@ -38,3 +40,5 @@ docker buildx build --builder build-environment --target development -t build-en
 docker buildx build --check .
 shellcheck test/*.sh leb/*.sh sshd/*.sh .devcontainer/*.sh
 ```
+If shellcheck isn't installed, run it from its image: `docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:stable <files>`.
+The development image's `~/.ccache` belongs to `leb` (999); when running it as another UID outside the DDE, set `CCACHE_DIR` to a writable directory.

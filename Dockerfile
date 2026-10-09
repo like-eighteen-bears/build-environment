@@ -259,6 +259,20 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=ci-desktop-apt-ca
     lld-${CLANG_VERSION} \
     llvm-${CLANG_VERSION} \
     lcov \
+    `# Vulkan headers/loader and shader compilers: glslangValidator, shaderc's glslc, and the shaderc` \
+    `# library for compiling shaders at run time` \
+    libvulkan-dev \
+    glslang-tools \
+    glslc \
+    libshaderc-dev \
+    `# Mesa's drivers include lavapipe, a CPU Vulkan driver, so Vulkan code (with validation) can run` \
+    `# in CI without a GPU. In the DDE, a host GPU's own driver is used when one is passed through.` \
+    mesa-vulkan-drivers \
+    vulkan-validationlayers \
+    `# Linux window system code (e.g. Wayland platform backends) must build in CI too. wayland-protocols` \
+    `# holds the XML (e.g. xdg-shell) that wayland-scanner turns into the code for windows.` \
+    libwayland-dev \
+    wayland-protocols \
     `# Only the client: containers use the host's daemon through a mounted socket` \
     docker-ce-cli \
     docker-buildx-plugin \
@@ -300,11 +314,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=development-apt-c
     apt update
     apt upgrade -y
     apt install -y --no-install-recommends \
-        libwayland-dev \
         libxkbcommon-dev \
         openssh-server \
         sshpass \
-        wayland-protocols \
         xwayland
 
     # Installing openssh-server generates host keys. Remove them so every container doesn't share
